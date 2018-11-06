@@ -766,21 +766,21 @@ bool test_tree()
 
             tree.insert(key);
 
-            // checking_visitor checker;
-            // const bool ret = tree.preorder_visit(checker);
+            checking_visitor checker;
+            const bool ret = tree.preorder_visit(checker);
 
-            // if (!ret)
-            // {
-            //     std::cout << "tree is bad after inserting: " << key << std::endl;
-            //     std::copy(permuted_keys.cbegin(),
-            //               permuted_keys.cend(),
-            //               std::ostream_iterator<int>{std::cout, " "});
-            //     std::cout << std::endl;
+            if (!ret)
+            {
+                std::cout << "tree is bad after inserting: " << key << std::endl;
+                std::copy(permuted_keys.cbegin(),
+                          permuted_keys.cend(),
+                          std::ostream_iterator<int>{std::cout, " "});
+                std::cout << std::endl;
 
-            //     printing_visitor printer;
-            //     tree.postorder_visit(printer);
-            //     return false;
-            // }
+                printing_visitor printer;
+                tree.postorder_visit(printer);
+                return false;
+            }
         }
 
         checking_visitor checker;
