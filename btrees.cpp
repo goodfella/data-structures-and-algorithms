@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <cstdio>
+#include <chrono>
 #include <vector>
 #include <functional>
 
@@ -44,7 +45,8 @@ class node
     node(key_type * begin, key_type * end):
         keys(begin),
         keys_end_(end),
-        keys_size_max_(std::distance(begin, end))
+        keys_size_max_(std::distance(begin, end)),
+        split_start_index_(std::ceil(keys_size_max_ / 2.0))
     {}
 
     std::size_t keys_size() const
@@ -55,6 +57,11 @@ class node
     std::size_t keys_size_max() const
     {
         return this->keys_size_max_;
+    }
+
+    std::size_t split_start_index() const
+    {
+        return this->split_start_index_;
     }
 
     key_type * keys_begin()
@@ -139,6 +146,7 @@ class node
     key_type * keys;
     key_type * keys_end_;
     std::size_t keys_size_max_ = 0;
+    std::size_t split_start_index_ = 0;
 };
 
 template <class T>
@@ -148,8 +156,6 @@ node<T>::~node() = default;
 template <class Key_Type>
 struct ref_node: public node<Key_Type>
 {
-    static constexpr std::size_t split_start_index = 2;
-
     using node_type = node<Key_Type>;
     using ref_type = std::unique_ptr<node_type>;
     using typename node_type::key_type;
@@ -205,13 +211,13 @@ struct ref_node: public node<Key_Type>
     {
         auto new_node = this->make_ref_node();
 
-        std::move(this->keys_begin() + split_start_index, this->keys_end(), new_node->keys_begin());
-        std::move(this->refs_begin() + split_start_index + 1, this->refs_end(), new_node->refs_begin());
+        std::move(this->keys_begin() + this->split_start_index(), this->keys_end(), new_node->keys_begin());
+        std::move(this->refs_begin() + this->split_start_index() + 1, this->refs_end(), new_node->refs_begin());
 
-        new_node->keys_size_ = std::distance(this->keys_begin() + split_start_index, this->keys_end());
+        new_node->keys_size_ = std::distance(this->keys_begin() + this->split_start_index(), this->keys_end());
         this->keys_size_ -= new_node->keys_size();
 
-        new_node->refs_size_ = std::distance(this->refs_begin() + split_start_index + 1, this->refs_end());
+        new_node->refs_size_ = std::distance(this->refs_begin() + this->split_start_index() + 1, this->refs_end());
         this->refs_size_ -= new_node->refs_size();
 
         return new_node;
@@ -428,8 +434,6 @@ class array_ref_node: public ref_node<Key_Type>
 template <class Key_Type>
 struct leaf_node: public node<Key_Type>
 {
-    static constexpr std::size_t split_start_index = 2;
-
     using node_type = node<Key_Type>;
     using typename node_type::key_type;
 
@@ -483,8 +487,8 @@ struct leaf_node: public node<Key_Type>
     {
         auto new_node = this->make_leaf_node();
 
-        std::move(this->keys_begin() + split_start_index, this->keys_end(), new_node->keys_begin());
-        new_node->keys_size_ = std::distance(this->keys_begin() + split_start_index, this->keys_end());
+        std::move(this->keys_begin() + this->split_start_index(), this->keys_end(), new_node->keys_begin());
+        new_node->keys_size_ = std::distance(this->keys_begin() + this->split_start_index(), this->keys_end());
         this->keys_size_ -= new_node->keys_size();
 
         return new_node;
@@ -516,13 +520,14 @@ struct array_leaf_node: public leaf_node<Key_Type>
     std::array<key_type, Max_Keys> keys_;
 };
 
+template <class Key_Type, std::size_t Order>
 class bplus_tree
 {
     public:
 
-    using key_type = int;
+    using key_type = Key_Type;
 
-    static constexpr std::size_t refs_size_max = 4;
+    static constexpr std::size_t refs_size_max = Order;
     static constexpr std::size_t keys_size_max = refs_size_max - 1;
 
 
@@ -725,25 +730,24 @@ struct printing_visitor: public node_visitor<int>
     }
 };
 
-int main(int argc, char ** argv)
+template <std::size_t O>
+bool test_tree()
 {
-    /*
-     * Invariants:
-     * - In each node keys are sorted accending
-     * - All leaf nodes are at the same level
-     * - All ref nodes have 1 more references than keys
-     * - Proper ref node ref / key relationship
-     * - All keys are accounted for in leaf nodes
-     */
-    bplus_tree tree;
+    std::vector<int> keys;
+    for (std::size_t i = 0; i < ((O - 1) * 3) + 1; ++i)
+    {
+        keys.push_back(i);
+    }
 
-    const std::vector<int> keys {0,1,2,3,4,5,6,7,8,9};
-    std::vector<int> permuted_keys (keys.begin(), keys.end());
+    std::copy(keys.cbegin(), keys.cend(), std::ostream_iterator<int>(std::cout, " "));
+    std::cout << std::endl;
+
+    std::vector<int> permuted_keys (keys.cbegin(), keys.cend());
     std::sort(permuted_keys.begin(), permuted_keys.end());
 
     do {
 
-        bplus_tree tree;
+        bplus_tree<int, O> tree;
         for (auto key : permuted_keys)
         {
             // std::cout << key << ' ';
@@ -758,21 +762,21 @@ int main(int argc, char ** argv)
 
             tree.insert(key);
 
-            checking_visitor checker;
-            const bool ret = tree.preorder_visit(checker);
+            // checking_visitor checker;
+            // const bool ret = tree.preorder_visit(checker);
 
-            if (!ret)
-            {
-                std::cout << "tree is bad after inserting: " << key << std::endl;
-                std::copy(permuted_keys.cbegin(),
-                          permuted_keys.cend(),
-                          std::ostream_iterator<int>{std::cout, " "});
-                std::cout << std::endl;
+            // if (!ret)
+            // {
+            //     std::cout << "tree is bad after inserting: " << key << std::endl;
+            //     std::copy(permuted_keys.cbegin(),
+            //               permuted_keys.cend(),
+            //               std::ostream_iterator<int>{std::cout, " "});
+            //     std::cout << std::endl;
 
-                printing_visitor printer;
-                tree.postorder_visit(printer);
-                return 1;
-            }
+            //     printing_visitor printer;
+            //     tree.postorder_visit(printer);
+            //     return false;
+            // }
         }
 
         checking_visitor checker;
@@ -787,18 +791,35 @@ int main(int argc, char ** argv)
             std::cout << std::endl;
             printing_visitor printer;
             tree.postorder_visit(printer);
-            return 1;
+            return false;
         }
 
-        if (!std::equal(checker.keys.begin(), checker.keys.end(), keys.begin(), keys.end()))
+        if (!std::equal(checker.keys.cbegin(), checker.keys.cend(), keys.cbegin(), keys.cend()))
         {
             std::cout << "keys do not match\n";
             printing_visitor printer;
             tree.postorder_visit(printer);
-            return 1;
+            return false;
         }
 
     } while (std::next_permutation(permuted_keys.begin(), permuted_keys.end()));
+
+    return true;
+}
+
+int main(int argc, char ** argv)
+{
+    if (!test_tree<3>())
+    {
+        std::cout << "tree of order 3 failed\n";
+        return 1;
+    }
+
+    if (!test_tree<4>())
+    {
+        std::cout << "tree of order 4 failed\n";
+        return 1;
+    }
 
     return 0;
 }
