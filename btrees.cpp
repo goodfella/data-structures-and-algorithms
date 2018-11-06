@@ -158,10 +158,14 @@ struct ref_node: public node<Key_Type>
 {
     using node_type = node<Key_Type>;
     using ref_type = std::unique_ptr<node_type>;
+    using ref_pointer_type = ref_type *;
+    using ref_reference_type = ref_type &;
+    using ref_iterator = ref_pointer_type;
+
     using typename node_type::key_type;
 
     ref_node(key_type * keys, key_type * keys_end,
-             ref_type * refs, ref_type * refs_end):
+             ref_pointer_type refs, ref_pointer_type refs_end):
         node_type(keys, keys_end),
         refs_(refs),
         refs_end_(refs_end),
@@ -180,27 +184,27 @@ struct ref_node: public node<Key_Type>
         return this->refs_size_max_;
     }
 
-    ref_type * refs_begin()
+    ref_iterator refs_begin()
     {
         return this->refs_;
     }
 
-    ref_type * refs_end()
+    ref_iterator refs_end()
     {
         return this->refs_ + this->refs_size();
     }
 
-    ref_type * refs_last()
+    ref_iterator refs_last()
     {
         return this->refs_ + (this->refs_size() - 1);
     }
 
-    std::unique_ptr<node_type> & refs_min()
+    ref_reference_type refs_min()
     {
         return this->refs_[0];
     }
 
-    std::unique_ptr<node_type> & refs_max()
+    ref_reference_type refs_max()
     {
         return this->refs_[this->refs_size() - 1];
     }
@@ -223,7 +227,7 @@ struct ref_node: public node<Key_Type>
         return new_node;
     }
 
-    void vacancy_insert(ref_type * insertion_point,
+    void vacancy_insert(ref_pointer_type insertion_point,
                         std::unique_ptr<node_type> && node)
     {
         const std::size_t move_count = std::distance(insertion_point, this->refs_end());
@@ -241,7 +245,7 @@ struct ref_node: public node<Key_Type>
 
     void vacancy_insert(std::unique_ptr<node_type> && node)
     {
-        ref_type * ref_insertion_point =
+        ref_pointer_type ref_insertion_point =
             this->refs_begin() + std::distance(this->keys_begin(), this->keys_lower_bound(node->keys_max()));
 
         this->vacancy_insert(ref_insertion_point, std::move(node));
@@ -302,7 +306,7 @@ struct ref_node: public node<Key_Type>
 
     std::pair<key_type, std::unique_ptr<node_type>> insert(const key_type key)
     {
-        ref_type * child_node = this->refs_last();
+        ref_pointer_type child_node = this->refs_last();
 
         if (this->compare(key,this->keys_min()))
         {
@@ -380,8 +384,8 @@ struct ref_node: public node<Key_Type>
 
     private:
 
-    ref_type * refs_;
-    ref_type * refs_end_;
+    ref_pointer_type refs_;
+    ref_pointer_type refs_end_;
 
     std::size_t refs_size_max_ = 0;
 };
