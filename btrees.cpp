@@ -24,13 +24,13 @@ struct leaf_node;
 template <class Key_Type>
 struct node_visitor
 {
-    virtual ~node_visitor();
+    virtual ~node_visitor() = 0;
     virtual bool visit(ref_node<Key_Type> & node, const std::size_t depth) = 0;
     virtual bool visit(leaf_node<Key_Type> & node, const std::size_t depth) = 0;
 };
 
 template <class K>
-node_visitor<K>::~node_visitor() {}
+node_visitor<K>::~node_visitor() = default;
 
 
 template <class T>
@@ -39,6 +39,7 @@ class node
     public:
 
     using key_type = T;
+    using key_iterator = key_type *;
 
     virtual ~node() = 0;
 
@@ -64,12 +65,12 @@ class node
         return this->split_start_index_;
     }
 
-    key_type * keys_begin()
+    key_iterator keys_begin()
     {
         return this->keys;
     }
 
-    key_type * keys_end()
+    key_iterator keys_end()
     {
         return this->keys_begin() + this->keys_size_;
     }
@@ -98,8 +99,8 @@ class node
         return this->keys[this->keys_size()];
     }
 
-    key_type * keys_lower_bound(key_type * first,
-                                const key_type key)
+    key_iterator keys_lower_bound(key_type * first,
+                                  const key_type key)
     {
         auto iter = this->keys_end();
         for (auto i = first; i != this->keys_end(); ++i)
@@ -114,7 +115,7 @@ class node
         return iter;
     }
 
-    key_type * keys_lower_bound(const key_type key)
+    key_iterator keys_lower_bound(const key_type key)
     {
         return this->keys_lower_bound(this->keys_begin(), key);
     }
@@ -163,9 +164,10 @@ struct ref_node: public node<Key_Type>
     using ref_iterator = ref_pointer_type;
 
     using typename node_type::key_type;
+    using typename node_type::key_iterator;
 
     ref_node(key_type * keys, key_type * keys_end,
-             ref_pointer_type refs, ref_pointer_type refs_end):
+             ref_pointer_type refs, ref_iterator refs_end):
         node_type(keys, keys_end),
         refs_(refs),
         refs_end_(refs_end),
@@ -209,6 +211,17 @@ struct ref_node: public node<Key_Type>
         return this->refs_[this->refs_size() - 1];
     }
 
+    ref_iterator refs_lower_bound(const key_type key)
+    {
+        return this->refs_lower_bound(this->keys_begin(), key);
+    }
+
+    ref_iterator refs_lower_bound(key_iterator first_key, const key_type key)
+    {
+        return this->refs_begin() + std::distance(this->keys_begin(),
+                                                  this->keys_lower_bound(first_key, key));
+    }
+
     virtual std::unique_ptr<ref_node> make_ref_node() = 0;
 
     std::unique_ptr<ref_node> split()
@@ -227,7 +240,7 @@ struct ref_node: public node<Key_Type>
         return new_node;
     }
 
-    void vacancy_insert(ref_pointer_type insertion_point,
+    void vacancy_insert(ref_iterator insertion_point,
                         std::unique_ptr<node_type> && node)
     {
         const std::size_t move_count = std::distance(insertion_point, this->refs_end());
@@ -245,9 +258,7 @@ struct ref_node: public node<Key_Type>
 
     void vacancy_insert(std::unique_ptr<node_type> && node)
     {
-        ref_pointer_type ref_insertion_point =
-            this->refs_begin() + std::distance(this->keys_begin(), this->keys_lower_bound(node->keys_max()));
-
+        ref_iterator ref_insertion_point = this->refs_lower_bound(node->keys_max());
         this->vacancy_insert(ref_insertion_point, std::move(node));
     }
 
@@ -299,7 +310,7 @@ struct ref_node: public node<Key_Type>
 
     std::unique_ptr<node_type> refs_pop_max()
     {
-        std::unique_ptr<node_type> node = std::move(this->refs_max());
+        ref_type node = std::move(this->refs_max());
         --this->refs_size_;
         return node;
     }
@@ -318,9 +329,7 @@ struct ref_node: public node<Key_Type>
         }
         else
         {
-            child_node =
-                this->refs_begin() + std::distance(this->keys_begin(),
-                                                   this->keys_lower_bound(this->keys_begin() + 1, key));
+            child_node = this->refs_lower_bound(this->keys_begin() + 1, key);
         }
 
         auto child_node_ret = (*child_node)->insert(key);
