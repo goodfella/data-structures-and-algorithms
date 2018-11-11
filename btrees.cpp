@@ -158,7 +158,7 @@ template <class Key_Type>
 struct ref_node: public node<Key_Type>
 {
     using node_type = node<Key_Type>;
-    using ref_type = std::unique_ptr<node_type>;
+    using ref_type = node_type*;
     using ref_pointer_type = ref_type *;
     using ref_reference_type = ref_type &;
     using ref_iterator = ref_pointer_type;
@@ -229,7 +229,7 @@ struct ref_node: public node<Key_Type>
         auto new_node = this->make_ref_node();
 
         std::move(this->keys_begin() + this->split_start_index(), this->keys_end(), new_node->keys_begin());
-        std::move(this->refs_begin() + this->split_start_index() + 1, this->refs_end(), new_node->refs_begin());
+        std::copy(this->refs_begin() + this->split_start_index() + 1, this->refs_end(), new_node->refs_begin());
 
         new_node->keys_size_ = std::distance(this->keys_begin() + this->split_start_index(), this->keys_end());
         this->keys_size_ -= new_node->keys_size();
@@ -244,8 +244,9 @@ struct ref_node: public node<Key_Type>
                         std::unique_ptr<node_type> && node)
     {
         const std::size_t move_count = std::distance(insertion_point, this->refs_end());
-        std::move_backward(insertion_point, this->refs_end(), insertion_point + move_count + 1);
-        *insertion_point = std::move(node);
+        std::copy_backward(insertion_point, this->refs_end(), insertion_point + move_count + 1);
+
+        *insertion_point = node.release();
         ++this->refs_size_;
     }
 
@@ -303,14 +304,14 @@ struct ref_node: public node<Key_Type>
     void refs_push_front(std::unique_ptr<node_type> && ref)
     {
         const std::size_t move_count = this->refs_size_;
-        std::move_backward(this->refs_begin(), this->refs_end(), this->refs_begin() + move_count + 1);
-        this->refs_min() = std::move(ref);
+        std::copy_backward(this->refs_begin(), this->refs_end(), this->refs_begin() + move_count + 1);
+        this->refs_min() = ref.release();
         ++this->refs_size_;
     }
 
     std::unique_ptr<node_type> refs_pop_max()
     {
-        ref_type node = std::move(this->refs_max());
+        std::unique_ptr<node_type> node{this->refs_max()};
         --this->refs_size_;
         return node;
     }
@@ -362,7 +363,7 @@ struct ref_node: public node<Key_Type>
              */
             const key_type promoted_key = this->keys_pop_max();
             this->vacancy_insert(child_node_ret.first, std::move(child_node_ret.second));
-            new_node->refs_push_front(std::move(this->refs_pop_max()));
+            new_node->refs_push_front(this->refs_pop_max());
             return std::make_pair(promoted_key, std::move(new_node));
         }
         else if (!(this->compare(child_node_ret.first, this->keys_max())) &&
@@ -400,7 +401,13 @@ struct ref_node: public node<Key_Type>
 };
 
 template <class K>
-ref_node<K>::~ref_node() = default;
+ref_node<K>::~ref_node()
+{
+    for (auto i = this->refs_begin(); i != this->refs_end(); ++i)
+    {
+        delete *i;
+    }
+}
 
 
 template <class Key_Type, std::size_t Max_Refs>
@@ -427,8 +434,8 @@ class array_ref_node: public ref_node<Key_Type>
         this->keys_[0] = key;
         this->keys_size_ = 1;
 
-        this->refs_[0].swap(lower_ref);
-        this->refs_[1].swap(upper_ref);
+        this->refs_[0] = lower_ref.release();
+        this->refs_[1] = upper_ref.release();
         this->refs_size_ = 2;
     }
 
@@ -642,7 +649,7 @@ struct checking_visitor: public node_visitor<int>
 
             const std::size_t key_index = std::distance(node.keys_begin(), i);
             auto lower_ref_iter = node.refs_begin() + key_index;
-            std::unique_ptr<::node<int>> & lower_ref = *lower_ref_iter;
+            ::node<int> * lower_ref = *lower_ref_iter;
             if (!lower_ref)
             {
                 printf("lower ref is null\n");
@@ -709,11 +716,11 @@ struct printing_visitor: public node_visitor<int>
             if (key_index == 0)
             {
                 std::cout
-                    << '(' << static_cast<void*>(node.refs_begin()[0].get()) << ')'
+                    << '(' << static_cast<void*>(node.refs_begin()[0]) << ')'
                     << " <- "
                     << *i
                     << " -> "
-                    << '(' << static_cast<void*>(node.refs_begin()[1].get()) << ')'
+                    << '(' << static_cast<void*>(node.refs_begin()[1]) << ')'
                     << ' ';
             }
             else
@@ -722,7 +729,7 @@ struct printing_visitor: public node_visitor<int>
                     << "<- "
                     << *i
                     << " -> "
-                    << '(' << static_cast<void*>(node.refs_begin()[key_index + 1].get()) << ')'
+                    << '(' << static_cast<void*>(node.refs_begin()[key_index + 1]) << ')'
                     << ' ';
             }
         }

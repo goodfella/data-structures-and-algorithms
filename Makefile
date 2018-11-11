@@ -1,1 +1,1 @@
-CXXFLAGS += -std=c++14 -pedantic -Wall -O3
+CXXFLAGS += -std=c++14 -pedantic -Wall -Werror -O3
