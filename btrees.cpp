@@ -511,10 +511,20 @@ struct leaf_node: public node<Key_Type>
         new_node->keys_size_ = std::distance(this->keys_begin() + this->split_start_index(), this->keys_end());
         this->keys_size_ -= new_node->keys_size();
 
+        if (this->next)
+        {
+            // This node already has a next node, so point the new
+            // node to this node's next node
+            new_node->next = this->next;
+        }
+
+        this->next = new_node.get();
+
         return new_node;
     }
 
     virtual std::unique_ptr<leaf_node> make_leaf_node() = 0;
+    leaf_node * next = nullptr;
 };
 
 template <class K>
@@ -593,6 +603,7 @@ struct checking_visitor: public node_visitor<int>
     std::size_t * leaf_depth = nullptr;
 
     std::vector<int> keys;
+    std::vector<int> leaf_traversal_keys;
 
     bool visit(ref_node<int> & node, const std::size_t depth) override
     {
@@ -675,6 +686,12 @@ struct checking_visitor: public node_visitor<int>
 
     bool visit(leaf_node<int> & node, const std::size_t depth)
     {
+        if (depth == 0 && node.next != nullptr)
+        {
+            printf("leaf node next incorrectly set\n");
+            return false;
+        }
+
         if (leaf_depth && *leaf_depth != depth)
         {
             printf("leaf depth missmatch\n");
@@ -685,6 +702,29 @@ struct checking_visitor: public node_visitor<int>
             // Leaf depth has not been set yet
             leaf_depth_ = depth;
             leaf_depth = &leaf_depth_;
+
+            // Since this is the first leaf node, check that all leafs
+            // are ordered properly
+            leaf_node<int> * prev_node = &node;
+            leaf_node<int> * next_node = node.next;
+            this->leaf_traversal_keys.insert(this->leaf_traversal_keys.end(),
+                                             prev_node->keys_begin(),
+                                             prev_node->keys_end());
+            while (next_node)
+            {
+                this->leaf_traversal_keys.insert(this->leaf_traversal_keys.end(),
+                                                 next_node->keys_begin(),
+                                                 next_node->keys_end());
+
+                if (prev_node->keys_max() >= next_node->keys_min())
+                {
+                    printf("next leaf node min key is not sorted properly\n");
+                    return false;
+                }
+
+                prev_node = next_node;
+                next_node = prev_node->next;
+            }
         }
 
         int prev_key = node.keys_min();
@@ -817,6 +857,18 @@ bool test_tree()
         if (!std::equal(checker.keys.cbegin(), checker.keys.cend(), keys.cbegin(), keys.cend()))
         {
             std::cout << "keys do not match\n";
+            printing_visitor printer;
+            tree.postorder_visit(printer);
+            return false;
+        }
+
+        if (!std::equal(checker.leaf_traversal_keys.cbegin(), checker.leaf_traversal_keys.cend(), keys.cbegin(), keys.cend()))
+        {
+            std::cout << "leaf traversal keys do not match: ";
+            std::copy(checker.leaf_traversal_keys.cbegin(),
+                      checker.leaf_traversal_keys.cend(),
+                      std::ostream_iterator<int>{std::cout, " "});
+            std::cout << std::endl;
             printing_visitor printer;
             tree.postorder_visit(printer);
             return false;
