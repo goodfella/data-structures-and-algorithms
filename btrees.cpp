@@ -594,7 +594,7 @@ class bplus_tree
 
     private:
 
-    std::unique_ptr<node<int>> root;
+    std::unique_ptr<node<key_type>> root;
 };
 
 struct checking_visitor: public node_visitor<int>
